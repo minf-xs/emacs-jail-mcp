@@ -9,6 +9,10 @@ tasks:
     - task: test
     - task: e2e
 
+  fmt:
+    cmds:
+      - gofmt -w $(find . -name '*.go')
+
   tidy:
     cmds:
       - go mod tidy
@@ -32,4 +36,4 @@ tasks:
 
   e2e:
     cmds:
-      - go test -count=1 -tags e2e -v -timeout 120s ./e2e/
+      - go test -count=1 -tags e2e -v -timeout 600s ./e2e/

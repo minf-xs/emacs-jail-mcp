@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/op/go-logging"
+
+	"github.com/gavv/emacs-jail-mcp/internal/container"
 )
 
 const (
@@ -37,6 +39,14 @@ func (b *syncBuffer) String() string {
 }
 
 func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == "entrypoint" {
+		if err := container.NewEntrypoint().Run(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	var logBuf syncBuffer
 	backend := logging.NewBackendFormatter(
 		logging.NewLogBackend(&logBuf, "", 0),

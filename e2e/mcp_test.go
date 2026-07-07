@@ -23,6 +23,10 @@ const (
 	e2eTimeout   = 240 * time.Second
 	startTimeout = 240 * time.Second
 	evalTimeout  = 30 * time.Second
+	// hangTimeout must exceed the slowest realistic Emacs init (which can take
+	// ~30s on some machines). A shorter timeout would misfire on a slow-but-
+	// legitimate init; only a genuine hang should trip it.
+	hangTimeout = 60 * time.Second
 )
 
 // newMCPClient creates an SSE MCP client connected to the server via TCP and performs
@@ -112,8 +116,136 @@ func firstImageData(result *mcp.CallToolResult) string {
 	return ""
 }
 
+type asyncToolResult struct {
+	result *mcp.CallToolResult
+	err    error
+}
+
+func callToolAsync(
+	c *mcpclient.Client,
+	name string,
+	args map[string]any,
+	timeout time.Duration,
+) <-chan asyncToolResult {
+	done := make(chan asyncToolResult, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
+		req := mcp.CallToolRequest{}
+		req.Params.Name = name
+		req.Params.Arguments = args
+
+		result, err := c.CallTool(ctx, req)
+		done <- asyncToolResult{result: result, err: err}
+	}()
+	return done
+}
+
+func waitToolResult(
+	t *testing.T,
+	done <-chan asyncToolResult,
+	timeout time.Duration,
+) asyncToolResult {
+	t.Helper()
+	select {
+	case result := <-done:
+		return result
+	case <-time.After(timeout):
+		t.Fatalf("timed out waiting for async tool result")
+		return asyncToolResult{}
+	}
+}
+
+func startAsync(c *mcpclient.Client) <-chan asyncToolResult {
+	return callToolAsync(c, "control", map[string]any{
+		"action":     "start",
+		"timeout_ms": hangTimeout.Milliseconds(),
+	}, hangTimeout+30*time.Second)
+}
+
+func waitForStarting(t *testing.T, c *mcpclient.Client) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		result := callTool(t, c, "control", map[string]any{"action": "status"})
+		return strings.Contains(firstText(result), "starting")
+	}, hangTimeout, 200*time.Millisecond)
+}
+
+func waitForFile(t *testing.T, c *mcpclient.Client, path string) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		result := callTool(t, c, "shell", map[string]any{
+			"command": "test -e " + path + " && echo exists",
+		})
+		return !result.IsError && strings.Contains(firstText(result), "exists")
+	}, hangTimeout, 200*time.Millisecond)
+}
+
+func assertStartupProbesWork(t *testing.T, c *mcpclient.Client, shellMarker string) {
+	t.Helper()
+
+	status := callTool(t, c, "control", map[string]any{"action": "status"})
+	assert.False(t, status.IsError)
+	assert.Contains(t, firstText(status), "starting")
+
+	require.Eventually(t, func() bool {
+		shell := callTool(t, c, "shell", map[string]any{"command": "echo " + shellMarker})
+		return !shell.IsError && strings.Contains(firstText(shell), shellMarker)
+	}, hangTimeout, 200*time.Millisecond)
+
+	require.Eventually(t, func() bool {
+		screenshot := callTool(t, c, "screenshot", nil)
+		return !screenshot.IsError && firstImageData(screenshot) != ""
+	}, hangTimeout, 200*time.Millisecond)
+
+	started := time.Now()
+	eval := callTool(t, c, "eval", map[string]any{"expression": "(+ 1 2)"})
+	assert.True(t, eval.IsError)
+	assert.Contains(t, firstText(eval), "not ready")
+	assert.Less(t, time.Since(started), 5*time.Second)
+}
+
+func assertRunningProbesWork(t *testing.T, c *mcpclient.Client, shellMarker string) {
+	t.Helper()
+
+	status := callTool(t, c, "control", map[string]any{"action": "status"})
+	assert.False(t, status.IsError)
+	assert.Contains(t, firstText(status), "running")
+
+	shell := callTool(t, c, "shell", map[string]any{"command": "echo " + shellMarker})
+	assert.False(t, shell.IsError)
+	assert.Contains(t, firstText(shell), shellMarker)
+
+	screenshot := callTool(t, c, "screenshot", nil)
+	assert.False(t, screenshot.IsError)
+	assert.NotEmpty(t, firstImageData(screenshot))
+
+	eval := callTool(t, c, "eval", map[string]any{"expression": "(+ 4 5)"})
+	assert.False(t, eval.IsError)
+	assert.Contains(t, firstText(eval), "9")
+}
+
+func backtraceBlock(text string) string {
+	bodyStart := 0
+	start := strings.LastIndex(text, "\nbacktrace>\n")
+	if start >= 0 {
+		bodyStart = start + len("\nbacktrace>\n")
+	} else if strings.HasPrefix(text, "backtrace>\n") {
+		bodyStart = len("backtrace>\n")
+	} else {
+		return ""
+	}
+
+	end := strings.Index(text[bodyStart:], "\nbacktrace<")
+	if end < 0 {
+		return ""
+	}
+	return text[bodyStart : bodyStart+end]
+}
+
 // TestMCP is the main end-to-end test suite.
-func TestMCP(t *testing.T) {
+func TestMCP_FullCycle(t *testing.T) {
 	var srv TestServer
 
 	srv.Start(t)
@@ -168,6 +300,7 @@ func TestMCP(t *testing.T) {
 			map[string]any{"action": "start"},
 			startTimeout,
 		)
+
 		require.False(t, result.IsError,
 			"expected success, got error: %s", firstText(result))
 		require.Contains(t, firstText(result), "started")
@@ -476,5 +609,235 @@ func TestMCP(t *testing.T) {
 			"expected success, got error: %s",
 			firstText(result))
 		assert.Contains(t, firstText(result), "stopped")
+	})
+}
+
+func TestMCP_EmacsLauncherFails(t *testing.T) {
+	var srv TestServer
+	srv.WithLauncher(t, "echo emacs-jail launcher exits >&2\nexit 90")
+	srv.Start(t)
+	t.Cleanup(func() { srv.Stop(t) })
+
+	c := newMCPClient(t, &srv)
+	started := time.Now()
+	result := callToolLong(t, c, "control", map[string]any{
+		"action":     "start",
+		"timeout_ms": hangTimeout.Milliseconds(),
+	}, hangTimeout+30*time.Second)
+	elapsed := time.Since(started)
+	require.True(t, result.IsError, "expected startup fault error")
+	assert.Contains(t, firstText(result), "exited before opening socket",
+		"crash should be detected via container exit, not the hang timeout")
+	assert.Less(t, elapsed, hangTimeout,
+		"crash should fail fast via exit detection, not wait for the timeout")
+
+	status := callTool(t, c, "control", map[string]any{"action": "status"})
+	assert.False(t, status.IsError)
+	assert.Contains(t, firstText(status), "stopped")
+}
+
+func TestMCP_EmacsLauncherHangs(t *testing.T) {
+	t.Run("ToolsAndStop", func(t *testing.T) {
+		var srv TestServer
+		srv.WithLauncher(t, "echo emacs-jail launcher hang >&2\nwhile true; do sleep 1; done")
+		srv.Start(t)
+		t.Cleanup(func() { srv.Stop(t) })
+
+		c := newMCPClient(t, &srv)
+		startClient := newMCPClient(t, &srv)
+		startDone := startAsync(startClient)
+		waitForStarting(t, c)
+
+		logs := callTool(t, c, "logs", map[string]any{"sources": "init_log,stderr"})
+		assert.False(t, logs.IsError, "logs should work while starting: %s", firstText(logs))
+		assert.Contains(t, firstText(logs), "=== init_log ===")
+		assert.Contains(t, firstText(logs), "=== stderr ===")
+
+		buffers := callTool(t, c, "logs", map[string]any{"sources": "messages"})
+		assert.False(t, buffers.IsError)
+		assert.Contains(t, firstText(buffers), "not ready")
+
+		bytecomp := callTool(t, c, "bytecomp", map[string]any{"file_path": "/tmp/nope.el"})
+		assert.True(t, bytecomp.IsError)
+		assert.Contains(t, firstText(bytecomp), "not ready")
+
+		assertStartupProbesWork(t, c, "launcher-hang-shell-ok")
+		stop := callTool(t, c, "control", map[string]any{"action": "stop"})
+		require.False(t, stop.IsError, "stop should cancel startup: %s", firstText(stop))
+		assert.Contains(t, firstText(stop), "stopped")
+
+		start := waitToolResult(t, startDone, 10*time.Second)
+		require.NoError(t, start.err)
+		require.NotNil(t, start.result)
+		assert.True(t, start.result.IsError)
+	})
+
+	t.Run("Restart", func(t *testing.T) {
+		var srv TestServer
+		flag := "/tmp/emacs-jail-e2e-" + strings.NewReplacer("/", "-").Replace(t.Name())
+		srv.WithLauncher(t, "flag="+flag+`
+if [ ! -e "$flag" ]; then
+  touch "$flag"
+  echo emacs-jail launcher hang >&2
+  while true; do sleep 1; done
+fi
+exec "$@"`)
+		srv.Start(t)
+		t.Cleanup(func() { srv.Stop(t) })
+
+		c := newMCPClient(t, &srv)
+		startClient := newMCPClient(t, &srv)
+		startDone := startAsync(startClient)
+		waitForStarting(t, c)
+		waitForFile(t, c, flag)
+
+		restart := callToolLong(t, c, "control", map[string]any{
+			"action":         "restart",
+			"swallow_errors": true,
+			"timeout_ms":     hangTimeout.Milliseconds(),
+		}, hangTimeout+60*time.Second)
+		require.False(t, restart.IsError, "restart should recover: %s", firstText(restart))
+		assert.Contains(t, firstText(restart), "restarted")
+
+		start := waitToolResult(t, startDone, 10*time.Second)
+		require.NoError(t, start.err)
+		require.NotNil(t, start.result)
+		assert.True(t, start.result.IsError)
+		assertRunningProbesWork(t, c, "launcher-restart-shell-ok")
+	})
+}
+
+func TestMCP_ElispInitFails(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		swallow bool
+	}{
+		{name: "Swallowed", swallow: true},
+		{name: "Fatal", swallow: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var srv TestServer
+			srv.WithPostInit(t, `(message "e2e post-init boom")
+(error "e2e post-init boom")`)
+			srv.Start(t)
+			t.Cleanup(func() { srv.Stop(t) })
+
+			c := newMCPClient(t, &srv)
+			args := map[string]any{
+				"action":     "start",
+				"timeout_ms": hangTimeout.Milliseconds(),
+			}
+			if tc.swallow {
+				args["swallow_errors"] = true
+			}
+
+			started := time.Now()
+			result := callToolLong(t, c, "control", args, hangTimeout+30*time.Second)
+			elapsed := time.Since(started)
+
+			if tc.swallow {
+				require.False(t, result.IsError,
+					"swallowed init error should start: %s", firstText(result))
+			} else {
+				require.True(t, result.IsError, "fatal init error should fail")
+				assert.Less(t, elapsed, hangTimeout,
+					"fatal init error should fail fast, not wait for timeout")
+				assert.Contains(t, firstText(result), "e2e post-init boom")
+			}
+
+			logs := callTool(t, c, "logs", map[string]any{
+				"sources": "init_log,stderr",
+				"limit":   int64(5000),
+			})
+			text := firstText(logs)
+			assert.Contains(t, text, "e2e post-init boom")
+			assert.Contains(t, text, "load!")
+			if !tc.swallow {
+				bt := backtraceBlock(text)
+				require.NotEmpty(t, bt, "log should contain a backtrace block")
+				assert.Contains(t, bt, "\n    ",
+					"backtrace block should contain indented call frames")
+			}
+
+			if tc.swallow {
+				assertRunningProbesWork(t, c, "swallowed-init-shell-ok")
+				stop := callTool(t, c, "control", map[string]any{"action": "stop"})
+				require.False(t, stop.IsError)
+			}
+		})
+	}
+}
+
+func TestMCP_ElispInitHangs(t *testing.T) {
+	t.Run("ToolsAndTimeout", func(t *testing.T) {
+		var srv TestServer
+		srv.WithPreInit(t, "(while t (sleep-for 1))")
+		srv.Start(t)
+		t.Cleanup(func() { srv.Stop(t) })
+
+		c := newMCPClient(t, &srv)
+		started := time.Now()
+		result := callToolLong(t, c, "control", map[string]any{
+			"action":     "start",
+			"timeout_ms": hangTimeout.Milliseconds(),
+		}, hangTimeout+30*time.Second)
+		elapsed := time.Since(started)
+
+		require.True(t, result.IsError, "start should fail when init hangs")
+		assert.GreaterOrEqual(t, elapsed, hangTimeout,
+			"a genuine hang should only be reported after the full timeout elapses")
+		assert.Contains(t, firstText(result), "timed out waiting for socket")
+	})
+
+	t.Run("ToolsAndStop", func(t *testing.T) {
+		var srv TestServer
+		srv.WithPreInit(t, "(while t (sleep-for 1))")
+		srv.Start(t)
+		t.Cleanup(func() { srv.Stop(t) })
+
+		c := newMCPClient(t, &srv)
+		startClient := newMCPClient(t, &srv)
+		startDone := startAsync(startClient)
+		waitForStarting(t, c)
+		assertStartupProbesWork(t, c, "init-hang-shell-ok")
+
+		stop := callTool(t, c, "control", map[string]any{"action": "stop"})
+		require.False(t, stop.IsError, "stop should cancel startup: %s", firstText(stop))
+		assert.Contains(t, firstText(stop), "stopped")
+
+		start := waitToolResult(t, startDone, 10*time.Second)
+		require.NoError(t, start.err)
+		require.NotNil(t, start.result)
+		assert.True(t, start.result.IsError)
+	})
+
+	t.Run("Restart", func(t *testing.T) {
+		var srv TestServer
+		flag := "/tmp/emacs-jail-e2e-" + strings.NewReplacer("/", "-").Replace(t.Name())
+		srv.WithPreInit(t, `(unless (file-exists-p "`+flag+`")
+  (write-region "" nil "`+flag+`")
+  (while t (sleep-for 1)))`)
+		srv.Start(t)
+		t.Cleanup(func() { srv.Stop(t) })
+
+		c := newMCPClient(t, &srv)
+		startClient := newMCPClient(t, &srv)
+		startDone := startAsync(startClient)
+		waitForStarting(t, c)
+		waitForFile(t, c, flag)
+
+		restart := callToolLong(t, c, "control", map[string]any{
+			"action":         "restart",
+			"swallow_errors": true,
+			"timeout_ms":     hangTimeout.Milliseconds(),
+		}, hangTimeout+60*time.Second)
+		require.False(t, restart.IsError, "restart should recover: %s", firstText(restart))
+		assert.Contains(t, firstText(restart), "restarted")
+
+		start := waitToolResult(t, startDone, 10*time.Second)
+		require.NoError(t, start.err)
+		require.NotNil(t, start.result)
+		assert.True(t, start.result.IsError)
+		assertRunningProbesWork(t, c, "init-restart-shell-ok")
 	})
 }

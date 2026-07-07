@@ -17,8 +17,12 @@ type ServerConfig struct {
 	UseSudo         bool
 	Display         DisplayConfig
 
-	EmacsBinary    string
-	EmacsSocketDir string
+	EmacsBinary       string
+	EmacsLauncher     string
+	EmacsPreInitFile  string
+	EmacsPostInitFile string
+	EmacsSocketDir    string
+	SwallowErrors     bool
 
 	MCPHost string
 	MCPPort int
@@ -37,15 +41,15 @@ func DefaultServer() *ServerConfig {
 			Depth: DefaultDisplayDepth,
 		},
 
-		EmacsBinary:    "emacs",
+		EmacsBinary:    DefaultEmacsBinary(),
 		EmacsSocketDir: "/tmp",
 
 		MCPHost: "127.0.0.1",
 		MCPPort: DefaultMCPPort,
 
-		StartTimeout: 240 * time.Second,
+		StartTimeout: 10 * time.Minute,
 		StopTimeout:  10 * time.Second,
-		ExecTimeout:  30 * time.Second,
+		ExecTimeout:  10 * time.Minute,
 	}
 }
 

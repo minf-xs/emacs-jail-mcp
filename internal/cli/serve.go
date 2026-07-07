@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -41,7 +40,7 @@ CLI client connections.
 With --stdio: reads MCP JSON-RPC messages from stdin/stdout (stdio transport).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg.UseSudo = !noSudo
-			return runServer(cfg, stdio)
+			return runServer(cmd.Context(), cfg, stdio)
 		},
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -69,6 +68,15 @@ With --stdio: reads MCP JSON-RPC messages from stdin/stdout (stdio transport).`,
 
 	pfs.StringVarP(&cfg.EmacsBinary,
 		"emacs-binary", "e", cfg.EmacsBinary, "emacs binary name or path")
+	pfs.StringVar(&cfg.EmacsLauncher,
+		"emacs-launcher", cfg.EmacsLauncher,
+		"optional executable that wraps the emacs command")
+	pfs.StringVar(&cfg.EmacsPreInitFile,
+		"emacs-pre-init", cfg.EmacsPreInitFile,
+		"optional elisp file loaded from site-start.el before user init")
+	pfs.StringVar(&cfg.EmacsPostInitFile,
+		"emacs-post-init", cfg.EmacsPostInitFile,
+		"optional elisp file loaded after user init")
 	pfs.StringVar(&cfg.EmacsSocketDir,
 		"emacs-socket-dir", cfg.EmacsSocketDir,
 		"directory for the emacs-jail-rpc Unix socket")
@@ -90,7 +98,7 @@ With --stdio: reads MCP JSON-RPC messages from stdin/stdout (stdio transport).`,
 	return cmd
 }
 
-func runServer(cfg *config.ServerConfig, stdio bool) error {
+func runServer(ctx context.Context, cfg *config.ServerConfig, stdio bool) error {
 	serverLog.Infof("starting MCP server (jail=%s)", cfg.JailID())
 
 	sb := jail.New(cfg)
@@ -124,21 +132,15 @@ func runServer(cfg *config.ServerConfig, stdio bool) error {
 		if ln != nil {
 			_ = ln.Close()
 		}
-		if sb.IsRunning() {
+		if sb.CurrentState() == jail.StateRunning || sb.CurrentState() == jail.StateStarting {
 			serverLog.Infof("stopping jail during cleanup")
 			_ = sb.Stop(context.Background())
 		}
 	}
 	defer cleanup()
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		sig := <-sigCh
-		serverLog.Infof("received signal %s, shutting down", sig)
-		cleanup()
-		os.Exit(0)
-	}()
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	if stdio {
 		serverLog.Infof("serving MCP stdio transport")
@@ -148,19 +150,8 @@ func runServer(cfg *config.ServerConfig, stdio bool) error {
 		}
 		serverLog.Infof("MCP stdio transport closed")
 	} else {
-		stdin := os.Stdin
-		stdinCh := make(chan struct{})
-		go func() {
-			buf := make([]byte, 1)
-			for {
-				_, err := stdin.Read(buf)
-				if err != nil {
-					close(stdinCh)
-					return
-				}
-			}
-		}()
-		<-stdinCh
+		<-ctx.Done()
+		serverLog.Infof("server context canceled, shutting down")
 	}
 	return nil
 }

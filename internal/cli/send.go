@@ -154,6 +154,8 @@ func callToolText(
 
 func newControlCmd(cfg *config.ClientConfig) *cobra.Command {
 	var start, stop, restart, status bool
+	var timeout time.Duration
+	var swallowErrors bool
 
 	cmd := &cobra.Command{
 		Use:     "control",
@@ -175,12 +177,21 @@ Specify exactly one action flag: --start, --stop, --restart, or --status.`,
 			case status:
 				action = "status"
 			}
-			timeout := cfg.StartTimeout
-			return withMCPClient(cfg, timeout,
+			toolTimeout := timeout
+			clientTimeout := cfg.StartTimeout
+			if toolTimeout > 0 {
+				clientTimeout = toolTimeout + 5*time.Second
+			}
+			return withMCPClient(cfg, clientTimeout,
 				func(ctx context.Context, c *mcpclient.Client) error {
-					text, err := callToolText(ctx, c, "control",
-						map[string]any{"action": action},
-					)
+					toolArgs := map[string]any{"action": action}
+					if toolTimeout > 0 && (action == "start" || action == "restart") {
+						toolArgs["timeout_ms"] = toolTimeout.Milliseconds()
+					}
+					if swallowErrors && (action == "start" || action == "restart") {
+						toolArgs["swallow_errors"] = true
+					}
+					text, err := callToolText(ctx, c, "control", toolArgs)
 					if err != nil {
 						return err
 					}
@@ -199,6 +210,10 @@ Specify exactly one action flag: --start, --stop, --restart, or --status.`,
 	fs.BoolVar(&stop, "stop", false, "stop the jail")
 	fs.BoolVar(&restart, "restart", false, "restart the jail")
 	fs.BoolVar(&status, "status", false, "show jail status")
+	fs.DurationVar(&timeout, "timeout", 0,
+		"optional timeout for --start or --restart, for example 5s")
+	fs.BoolVar(&swallowErrors, "swallow-errors", false,
+		"swallow Emacs init errors and continue startup")
 
 	cmd.MarkFlagsOneRequired("start", "stop", "restart", "status")
 	cmd.MarkFlagsMutuallyExclusive("start", "stop", "restart", "status")

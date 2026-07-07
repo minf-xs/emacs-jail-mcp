@@ -101,6 +101,8 @@ func TestControlToolHasActionParam(t *testing.T) {
 		if tool.Name == "control" {
 			_, ok := tool.InputSchema.Properties["action"]
 			assert.True(t, ok)
+			_, ok = tool.InputSchema.Properties["timeout_ms"]
+			assert.True(t, ok)
 			return
 		}
 	}

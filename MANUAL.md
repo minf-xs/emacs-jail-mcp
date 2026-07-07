@@ -54,12 +54,15 @@ emacs-jail-mcp serve [flags]
       --display-height int        override auto-detected Xvfb display height in pixels
       --display-depth int         Xvfb display color depth (default 24)
   -e, --emacs-binary string       emacs binary name or path (default "emacs")
+      --emacs-launcher string     optional executable that wraps the emacs command
+      --emacs-pre-init string     optional elisp file loaded from site-start.el before user init
+      --emacs-post-init string    optional elisp file loaded after user init
       --emacs-socket-dir string   directory for the emacs-jail-rpc Unix socket (default "/tmp")
   -H, --mcp-host string           host for the MCP SSE server to bind to (default "127.0.0.1")
   -P, --mcp-port int              TCP port for the MCP SSE server (default 9421)
-      --start-timeout duration    timeout waiting for jail to start (default 4m0s)
+      --start-timeout duration    timeout waiting for jail to start (default 10m0s)
       --stop-timeout duration     timeout waiting for jail to stop (default 10s)
-      --exec-timeout duration     timeout for elisp eval and shell commands (default 30s)
+      --exec-timeout duration     timeout for elisp eval and shell commands (default 10m0s)
   -h, --help                      help for serve
 ```
 
@@ -95,8 +98,8 @@ emacs-jail-mcp send [flags]
 ```text
   -H, --mcp-host string          host of the MCP SSE server to connect to (default "127.0.0.1")
   -P, --mcp-port int             TCP port of the MCP SSE server (default 9421)
-      --start-timeout duration   timeout for jail start/stop operations (default 4m0s)
-      --exec-timeout duration    timeout for eval, logs, bytecomp, and shell operations (default 30s)
+      --start-timeout duration   timeout for jail start/stop operations (default 10m0s)
+      --exec-timeout duration    timeout for eval, logs, bytecomp, and shell operations (default 10m0s)
   -h, --help                     help for send
 ```
 
@@ -113,11 +116,13 @@ emacs-jail-mcp send control [flags]
 ### Command Flags
 
 ```text
-      --start     start the jail
-      --stop      stop the jail
-      --restart   restart the jail
-      --status    show jail status
-  -h, --help      help for control
+      --start              start the jail
+      --stop               stop the jail
+      --restart            restart the jail
+      --status             show jail status
+      --timeout duration   optional timeout for --start or --restart, for example 5s
+      --swallow-errors     swallow Emacs init errors and continue startup
+  -h, --help               help for control
 ```
 
 ## `emacs-jail-mcp send eval`

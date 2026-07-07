@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 
 	logging "github.com/op/go-logging"
@@ -24,6 +25,7 @@ var log = logging.MustGetLogger("container")
 type Container struct {
 	serverConfig *config.ServerConfig
 	display      *display.Display
+	mu           sync.Mutex
 	running      bool
 	lockFile     *os.File // held open with LOCK_EX so watchdog detects parent death
 }
@@ -66,7 +68,7 @@ func (c *Container) Start(ctx context.Context) error {
 	c.lockFile = lockFile
 	log.Infof("acquired lock %s", c.serverConfig.LockPath())
 
-	envVars := entrypointEnv(c.serverConfig, c.display)
+	envVars := EntrypointEnv(c.serverConfig, c.display)
 	uid := os.Getuid()
 	gid := os.Getgid()
 	cwd, err := os.Getwd()
@@ -76,6 +78,14 @@ func (c *Container) Start(ctx context.Context) error {
 		c.lockFile = nil
 		_ = os.RemoveAll(c.serverConfig.ElispDir())
 		return fmt.Errorf("get working directory: %w", err)
+	}
+	entrypointBinary, err := os.Executable()
+	if err != nil {
+		log.Errorf("failed to get executable path: %v", err)
+		_ = c.lockFile.Close()
+		c.lockFile = nil
+		_ = os.RemoveAll(c.serverConfig.ElispDir())
+		return fmt.Errorf("get executable path: %w", err)
 	}
 
 	args := []string{
@@ -107,7 +117,7 @@ func (c *Container) Start(ctx context.Context) error {
 	}
 	args = append(args,
 		"--rootfs", "/:O",
-		"/bin/bash", "-c", entrypointScript,
+		entrypointBinary, "entrypoint",
 	)
 
 	out, err := c.podman(ctx, args...)
@@ -119,14 +129,19 @@ func (c *Container) Start(ctx context.Context) error {
 		return fmt.Errorf("podman run: %w\noutput: %s", err, out)
 	}
 
+	c.mu.Lock()
 	c.running = true
+	c.mu.Unlock()
 	log.Infof("container %q started (id=%s)",
 		c.serverConfig.ContainerName(), strings.TrimSpace(out))
 	return nil
 }
 
 func (c *Container) Stop(ctx context.Context) error {
-	if !c.running {
+	c.mu.Lock()
+	running := c.running
+	c.mu.Unlock()
+	if !running {
 		return fmt.Errorf("container %q is not running",
 			c.serverConfig.ContainerName())
 	}
@@ -135,26 +150,25 @@ func (c *Container) Stop(ctx context.Context) error {
 
 	out, err := c.podman(ctx, "kill", c.serverConfig.ContainerName())
 	if err != nil {
-		log.Errorf("podman kill failed: %v (output: %s)", err, strings.TrimSpace(out))
-		return fmt.Errorf("podman kill: %w\noutput: %s", err, out)
+		// The container may have already exited on its own (e.g. Emacs called
+		// kill-emacs). Treat this as a warning: cleanup still proceeds so the
+		// lock, elisp dir, and Xvfb state are released regardless.
+		log.Warningf("podman kill failed: %v (output: %s)", err, strings.TrimSpace(out))
 	}
 
-	// Forcibly remove the container so its name is freed
-	// immediately. This is important for restart: the same
-	// container name is reused and "podman run" fails if the
-	// previous container is still in "exiting" state.
-	// --ignore makes the call a no-op if the container is
-	// already gone.
+	// Forcibly remove the container so its name is freed immediately. This
+	// matters for restart: the same container name is reused and "podman run"
+	// fails if the previous container is still in "exiting" state.
+	// --ignore makes this a no-op if the container is already gone.
 	rmOut, rmErr := c.podman(ctx, "rm", "--force", "--ignore",
 		c.serverConfig.ContainerName())
 	if rmErr != nil {
 		log.Warningf("podman rm failed: %v (output: %s)", rmErr, strings.TrimSpace(rmOut))
 	}
 
-	// Release the flock sentinel so the watchdog (if still
-	// alive) can detect the parent has gone.  Close also
-	// removes the file descriptor; the OS releases the lock
-	// automatically.
+	// Release the flock sentinel so the watchdog inside the container can
+	// detect that the parent process has gone. The OS releases the lock when
+	// the file descriptor is closed.
 	if c.lockFile != nil {
 		_ = c.lockFile.Close()
 		_ = os.Remove(c.serverConfig.LockPath())
@@ -164,14 +178,33 @@ func (c *Container) Stop(ctx context.Context) error {
 
 	_ = os.RemoveAll(c.serverConfig.ElispDir())
 
-	// Remove stale Xvfb X11 socket and lock files so the
-	// next start can bind to the same display number without
-	// "display already in use" errors.
+	// Remove stale Xvfb X11 socket and lock files so the next start can
+	// bind to the same display number without "display already in use" errors.
 	_ = os.Remove(c.display.X11SocketPath())
 	_ = os.Remove(c.display.X11LockPath())
 
+	c.mu.Lock()
 	c.running = false
+	c.mu.Unlock()
+
+	if err != nil {
+		log.Errorf("jail stop had error: %v", err)
+		return fmt.Errorf("podman kill: %w\noutput: %s", err, out)
+	}
 	log.Infof("container %q stopped", c.serverConfig.ContainerName())
+	return nil
+}
+
+// Wait blocks until the container process exits or ctx is cancelled.
+// Returns nil when the container exits (for any reason), ctx.Err() on cancellation.
+func (c *Container) Wait(ctx context.Context) error {
+	_, err := c.podman(ctx, "wait", c.serverConfig.ContainerName())
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if err != nil {
+		return fmt.Errorf("podman wait: %w", err)
+	}
 	return nil
 }
 
@@ -221,6 +254,8 @@ func (c *Container) ExecRaw(
 }
 
 func (c *Container) IsRunning() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.running
 }
 
@@ -288,20 +323,6 @@ func (c *Container) podmanArgs(args ...string) []string {
 	return full
 }
 
-// formatCommand returns a human-readable command line. If the last argument is a
-// multi-line script (the entrypoint passed after "bash -c"), it is written to a
-// temp file and the path is shown instead.
 func (c *Container) formatCommand(args []string) string {
-	if len(args) < 3 {
-		return strings.Join(args, " ")
-	}
-	last := args[len(args)-1]
-	if !strings.Contains(last, "\n") {
-		return strings.Join(args, " ")
-	}
-	name := fmt.Sprintf("/tmp/%s-entrypoint.sh", c.serverConfig.JailID())
-	if err := os.WriteFile(name, []byte(last), 0o644); err != nil {
-		return strings.Join(args[:len(args)-1], " ") + " <script>"
-	}
-	return strings.Join(args[:len(args)-1], " ") + " " + name
+	return strings.Join(args, " ")
 }

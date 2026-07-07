@@ -166,10 +166,12 @@ func renderSection(src string, lines []string, offset, limit int) string {
 	total := len(lines)
 
 	if offset > 0 || limit > 0 {
-		// offset is 1-based; convert to 0-based index.
 		start := 0
 		if offset > 0 {
+			// offset is 1-based; convert to 0-based index.
 			start = offset - 1
+		} else if limit > 0 && limit < total {
+			start = total - limit
 		}
 		if start >= total {
 			return fmt.Sprintf("%s\n(offset %d is past end of %d lines)", header, offset, total)

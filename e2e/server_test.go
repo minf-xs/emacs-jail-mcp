@@ -6,9 +6,11 @@
 package e2e_test
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -21,9 +23,11 @@ import (
 
 // TestServer manages the lifecycle of an in-process MCP server for e2e tests.
 type TestServer struct {
-	stdinW    *os.File
-	origStdin *os.File
-	errCh     <-chan error
+	cancel       context.CancelFunc
+	errCh        <-chan error
+	launcherPath string
+	preInitPath  string
+	postInitPath string
 }
 
 func (s *TestServer) Addr() string {
@@ -34,54 +38,86 @@ func (s *TestServer) Port() string {
 	return fmt.Sprintf("%d", config.E2ETestMCPPort)
 }
 
-// Start launches the MCP server via the cobra command in a goroutine
-// with piped stdin. It polls the TCP port until the server is accepting
-// connections.
+func (s *TestServer) WithLauncher(t *testing.T, body string) {
+	t.Helper()
+	require.Empty(t, s.errCh, "WithLauncher must be called before Start")
+	path := filepath.Join(t.TempDir(), "emacs-launcher")
+	script := "#!/bin/sh\n" + body + "\n"
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+	s.launcherPath = path
+}
+
+func (s *TestServer) WithPreInit(t *testing.T, body string) {
+	t.Helper()
+	require.Empty(t, s.errCh, "WithPreInit must be called before Start")
+	path := filepath.Join(t.TempDir(), "pre-init.el")
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
+	s.preInitPath = path
+}
+
+func (s *TestServer) WithPostInit(t *testing.T, body string) {
+	t.Helper()
+	require.Empty(t, s.errCh, "WithPostInit must be called before Start")
+	path := filepath.Join(t.TempDir(), "post-init.el")
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
+	s.postInitPath = path
+}
+
 func (s *TestServer) Start(t *testing.T) {
 	t.Helper()
 
-	stdinR, stdinW, err := os.Pipe()
-	require.NoError(t, err)
-
-	s.stdinW = stdinW
-	s.origStdin = os.Stdin
-	os.Stdin = stdinR
-
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
 	errCh := make(chan error, 1)
 	s.errCh = errCh
 	go func() {
 		cmd := cli.NewRootCmd()
-		cmd.SetArgs([]string{
+		cmd.SetContext(ctx)
+		args := []string{
 			"serve",
 			"--mcp-port", fmt.Sprintf("%d", config.E2ETestMCPPort),
-		})
+		}
+		if s.launcherPath != "" {
+			args = append(args, "--emacs-launcher", s.launcherPath)
+		}
+		if s.preInitPath != "" {
+			args = append(args, "--emacs-pre-init", s.preInitPath)
+		}
+		if s.postInitPath != "" {
+			args = append(args, "--emacs-post-init", s.postInitPath)
+		}
+		cmd.SetArgs(args)
 		errCh <- cmd.Execute()
 	}()
 
-	deadline := time.Now().Add(10 * time.Second)
+	waitForTCP(t, s.Addr(), 10*time.Second)
+}
+
+func waitForTCP(t *testing.T, addr string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		conn, dialErr := net.DialTimeout("tcp", s.Addr(), time.Second)
+		conn, dialErr := net.DialTimeout("tcp", addr, time.Second)
 		if dialErr == nil {
 			_ = conn.Close()
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Fatalf("server at %s not ready after 10s", s.Addr())
+	t.Fatalf("server at %s not ready after %s", addr, timeout)
 }
 
-// Stop closes stdin to signal the server to exit and waits for it to
-// shut down cleanly.
 func (s *TestServer) Stop(t *testing.T) {
 	t.Helper()
 
-	_ = s.stdinW.Close()
-	os.Stdin = s.origStdin
+	if s.cancel != nil {
+		s.cancel()
+	}
 
 	select {
 	case err := <-s.errCh:
 		assert.NoError(t, err, "server exited with error")
-	case <-time.After(10 * time.Second):
-		t.Error("server did not exit within 10s")
+	case <-time.After(60 * time.Second):
+		t.Error("server did not exit within 60s")
 	}
 }

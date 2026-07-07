@@ -22,8 +22,8 @@ func DefaultClient() *ClientConfig {
 		MCPHost: "127.0.0.1",
 		MCPPort: DefaultMCPPort,
 
-		StartTimeout: 240 * time.Second,
-		ExecTimeout:  30 * time.Second,
+		StartTimeout: 10 * time.Minute,
+		ExecTimeout:  10 * time.Minute,
 	}
 }
 

@@ -15,6 +15,11 @@
 Initialised from the EMACS_JAIL_LOG_PATH environment variable,
 which is set by the emacs-jail-mcp entrypoint before Emacs starts.")
 
+(defun emacs-jail-log--true-env-p (name)
+  "Return non-nil when environment variable NAME is truthy."
+  (let ((value (getenv name)))
+    (and value (member value '("1" "t" "true" "yes")))))
+
 (defun emacs-jail-log--write-file (line)
   "Append LINE followed by a newline to `emacs-jail-log-path'."
   (when (and emacs-jail-log-path (stringp emacs-jail-log-path))
@@ -59,27 +64,44 @@ which is set by the emacs-jail-mcp entrypoint before Emacs starts.")
 
 ;;; Log every load with entry, exit, or failure (with backtrace on failure)
 
+(defun emacs-jail-log--log-error (prefix file err)
+  "Log ERR for FILE with PREFIX and a backtrace."
+  (emacs-jail-log--write-file
+   (format "%s %s: %s" prefix file (error-message-string err)))
+  (emacs-jail-log--write-stderr
+   (format "[%s] %s: %s" prefix file (error-message-string err)))
+  (condition-case nil
+      (let ((bt (with-output-to-string (backtrace))))
+        (emacs-jail-log--write-file "backtrace>")
+        (dolist (line (split-string bt "\n" t))
+          (emacs-jail-log--write-file (concat "  " line)))
+        (emacs-jail-log--write-file "backtrace<"))
+    (error nil)))
+
 (defun emacs-jail-log--load-advice (orig-fn file &rest args)
-  "Around advice for `load': log entry and exit to the log file.
-On failure, log the error message and a backtrace, then re-signal."
+  "Around advice for `load': log entry and exit to the log file."
   (emacs-jail-log--write-file (format "load> %s" file))
   (condition-case err
       (let ((result (apply orig-fn file args)))
         (emacs-jail-log--write-file (format "load< %s" file))
         result)
     (error
-     (emacs-jail-log--write-file
-      (format "load! %s: %s" file (error-message-string err)))
-     (emacs-jail-log--write-stderr
-      (format "[load-error] %s: %s" file (error-message-string err)))
-     (condition-case nil
-         (let ((bt (with-output-to-string (backtrace))))
-           (dolist (line (split-string bt "\n" t))
-             (emacs-jail-log--write-file (concat "  " line))))
-       (error nil))
-     (signal (car err) (cdr err)))))
+     (emacs-jail-log--log-error "load!" file err)
+     (unless (emacs-jail-log--true-env-p "EMACS_JAIL_SWALLOW_ERRORS")
+       (kill-emacs 90)))))
 
 (advice-add 'load :around #'emacs-jail-log--load-advice)
+
+(defun emacs-jail-log--top-level-advice (orig-fn &rest args)
+  "Optionally suppress or fail fast on top-level init errors."
+  (condition-case err
+      (apply orig-fn args)
+    (error
+     (emacs-jail-log--log-error "top-level!" "normal-top-level" err)
+     (unless (emacs-jail-log--true-env-p "EMACS_JAIL_SWALLOW_ERRORS")
+       (kill-emacs 90)))))
+
+(advice-add 'normal-top-level :around #'emacs-jail-log--top-level-advice)
 
 (provide 'emacs-jail-log)
 

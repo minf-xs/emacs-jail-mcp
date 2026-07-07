@@ -26,6 +26,7 @@ Manages an Emacs instance running inside a copy-on-write disposable sandbox. All
 	cmd.AddCommand(newServerCmd())
 	cmd.AddCommand(newInfoCmd())
 	cmd.AddCommand(newClientCmd())
+	cmd.AddCommand(newEntrypointCmd())
 	cmd.AddCommand(newManCmd())
 
 	cmd.InitDefaultHelpCmd()

@@ -17,6 +17,10 @@ Set early in site-start.el so user init can detect the jail environment.")
 ;; Initialize logging advices.
 (require 'emacs-jail-log)
 
+(when-let* ((file (getenv "EMACS_JAIL_PRE_INIT_FILE"))
+            ((not (string= file ""))))
+  (load file nil nil t))
+
 (provide 'site-start)
 
 ;;; site-start.el ends here

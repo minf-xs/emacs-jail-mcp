@@ -95,7 +95,7 @@ It should be easy enough to implement other container or OverlayFS backends and 
 Should be pre-installed on system:
 
 - golang (>= 1.24)
-- emacs (>= 27.1, tested only on >= 30.1)
+- emacs (>= 29.1)
 - podman (for containers)
 - xvfb (for virtual X server)
 - imagemagick (for screenshots)
