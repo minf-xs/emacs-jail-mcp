@@ -9,25 +9,22 @@ emacs-jail-mcp [command] [global flags] [command flags]
 ```
 
 ### Commands
+- [emacs-jail-mcp serve](#emacs-jail-mcp-serve)
+- [emacs-jail-mcp info](#emacs-jail-mcp-info)
+- [emacs-jail-mcp send](#emacs-jail-mcp-send)
+    - [emacs-jail-mcp send control](#emacs-jail-mcp-send-control)
+    - [emacs-jail-mcp send eval](#emacs-jail-mcp-send-eval)
+    - [emacs-jail-mcp send bytecomp](#emacs-jail-mcp-send-bytecomp)
+    - [emacs-jail-mcp send shell](#emacs-jail-mcp-send-shell)
+    - [emacs-jail-mcp send screenshot](#emacs-jail-mcp-send-screenshot)
+    - [emacs-jail-mcp send logs](#emacs-jail-mcp-send-logs)
+- [emacs-jail-mcp man](#emacs-jail-mcp-man)
+- [emacs-jail-mcp completion](#emacs-jail-mcp-completion)
+    - [emacs-jail-mcp completion bash](#emacs-jail-mcp-completion-bash)
+    - [emacs-jail-mcp completion zsh](#emacs-jail-mcp-completion-zsh)
+    - [emacs-jail-mcp completion fish](#emacs-jail-mcp-completion-fish)
+    - [emacs-jail-mcp completion powershell](#emacs-jail-mcp-completion-powershell)
 
-* [emacs-jail-mcp serve](#emacs-jail-mcp-serve)
-* [emacs-jail-mcp info](#emacs-jail-mcp-info)
-* [emacs-jail-mcp send](#emacs-jail-mcp-send)
-* [emacs-jail-mcp send control](#emacs-jail-mcp-send-control)
-* [emacs-jail-mcp send eval](#emacs-jail-mcp-send-eval)
-* [emacs-jail-mcp send bytecomp](#emacs-jail-mcp-send-bytecomp)
-* [emacs-jail-mcp send shell](#emacs-jail-mcp-send-shell)
-* [emacs-jail-mcp send screenshot](#emacs-jail-mcp-send-screenshot)
-* [emacs-jail-mcp send logs](#emacs-jail-mcp-send-logs)
-* [emacs-jail-mcp send help](#emacs-jail-mcp-send-help)
-* [emacs-jail-mcp man](#emacs-jail-mcp-man)
-* [emacs-jail-mcp completion](#emacs-jail-mcp-completion)
-* [emacs-jail-mcp completion bash](#emacs-jail-mcp-completion-bash)
-* [emacs-jail-mcp completion zsh](#emacs-jail-mcp-completion-zsh)
-* [emacs-jail-mcp completion fish](#emacs-jail-mcp-completion-fish)
-* [emacs-jail-mcp completion powershell](#emacs-jail-mcp-completion-powershell)
-* [emacs-jail-mcp completion help](#emacs-jail-mcp-completion-help)
-* [emacs-jail-mcp help](#emacs-jail-mcp-help)
 
 # Commands
 
@@ -63,7 +60,6 @@ emacs-jail-mcp serve [flags]
       --start-timeout duration    timeout waiting for jail to start (default 10m0s)
       --stop-timeout duration     timeout waiting for jail to stop (default 10s)
       --exec-timeout duration     timeout for elisp eval and shell commands (default 10m0s)
-  -h, --help                      help for serve
 ```
 
 ## `emacs-jail-mcp info`
@@ -79,7 +75,6 @@ emacs-jail-mcp info [flags]
 ```text
   -H, --mcp-host string   host of the MCP SSE server to connect to (default "127.0.0.1")
   -P, --mcp-port int      TCP port of the MCP SSE server (default 9421)
-  -h, --help              help for info
 ```
 
 ## `emacs-jail-mcp send`
@@ -89,21 +84,7 @@ Send MCP requests from the command line.
 Each subcommand corresponds to one MCP tool and connects to an already-running server via
 its TCP port (SSE transport).
 
-```text
-emacs-jail-mcp send [flags]
-```
-
-### Command Flags
-
-```text
-  -H, --mcp-host string          host of the MCP SSE server to connect to (default "127.0.0.1")
-  -P, --mcp-port int             TCP port of the MCP SSE server (default 9421)
-      --start-timeout duration   timeout for jail start/stop operations (default 10m0s)
-      --exec-timeout duration    timeout for eval, logs, bytecomp, and shell operations (default 10m0s)
-  -h, --help                     help for send
-```
-
-## `emacs-jail-mcp send control`
+### `emacs-jail-mcp send control`
 
 Control the jail lifecycle.
 
@@ -113,7 +94,9 @@ Specify exactly one action flag: --start, --stop, --restart, or --status.
 emacs-jail-mcp send control [flags]
 ```
 
-### Command Flags
+**Aliases:** `ctl`
+
+#### Command Flags
 
 ```text
       --start              start the jail
@@ -122,10 +105,9 @@ emacs-jail-mcp send control [flags]
       --status             show jail status
       --timeout duration   optional timeout for --start or --restart, for example 5s
       --swallow-errors     swallow Emacs init errors and continue startup
-  -h, --help               help for control
 ```
 
-## `emacs-jail-mcp send eval`
+### `emacs-jail-mcp send eval`
 
 Evaluate an Emacs Lisp expression
 
@@ -133,13 +115,9 @@ Evaluate an Emacs Lisp expression
 emacs-jail-mcp send eval EXPRESSION [flags]
 ```
 
-### Command Flags
+**Aliases:** `ev`
 
-```text
-  -h, --help   help for eval
-```
-
-## `emacs-jail-mcp send bytecomp`
+### `emacs-jail-mcp send bytecomp`
 
 Byte-compile an Elisp file and return diagnostics
 
@@ -147,15 +125,16 @@ Byte-compile an Elisp file and return diagnostics
 emacs-jail-mcp send bytecomp [flags]
 ```
 
-### Command Flags
+**Aliases:** `bc`
+
+#### Command Flags
 
 ```text
   -f, --file-path string   path to the Elisp file to byte-compile
   -s, --severity string    filter by severity: error or warning
-  -h, --help               help for bytecomp
 ```
 
-## `emacs-jail-mcp send shell`
+### `emacs-jail-mcp send shell`
 
 Run a shell command inside the jail container
 
@@ -163,13 +142,9 @@ Run a shell command inside the jail container
 emacs-jail-mcp send shell COMMAND [flags]
 ```
 
-### Command Flags
+**Aliases:** `sh`
 
-```text
-  -h, --help   help for shell
-```
-
-## `emacs-jail-mcp send screenshot`
+### `emacs-jail-mcp send screenshot`
 
 Capture a screenshot of the Emacs display
 
@@ -177,14 +152,15 @@ Capture a screenshot of the Emacs display
 emacs-jail-mcp send screenshot [flags]
 ```
 
-### Command Flags
+**Aliases:** `sc`
+
+#### Command Flags
 
 ```text
   -o, --output string   output file path for the PNG screenshot
-  -h, --help            help for screenshot
 ```
 
-## `emacs-jail-mcp send logs`
+### `emacs-jail-mcp send logs`
 
 Fetch Emacs log and diagnostic output
 
@@ -192,28 +168,14 @@ Fetch Emacs log and diagnostic output
 emacs-jail-mcp send logs [flags]
 ```
 
-### Command Flags
+**Aliases:** `lg`
+
+#### Command Flags
 
 ```text
   -s, --sources string   comma-separated log sources (messages, warnings, backtrace, compile_log, async_compile_log, init_log, stderr)
   -o, --offset int       1-based line offset within each source section
   -l, --limit int        max lines to return per source section
-  -h, --help             help for logs
-```
-
-## `emacs-jail-mcp send help`
-
-Help provides help for any command in the application.
-Simply type send help [path to command] for full details.
-
-```text
-emacs-jail-mcp send help [command] [flags]
-```
-
-### Command Flags
-
-```text
-  -h, --help   help for help
 ```
 
 ## `emacs-jail-mcp man`
@@ -228,7 +190,6 @@ emacs-jail-mcp man [flags]
 
 ```text
       --format string   output format: troff or markdown (default "troff")
-  -h, --help            help for man
 ```
 
 ## `emacs-jail-mcp completion`
@@ -237,17 +198,7 @@ Generate the autocompletion script for emacs-jail-mcp for the specified shell.
 See each sub-command's help for details on how to use the generated script.
 
 
-```text
-emacs-jail-mcp completion [flags]
-```
-
-### Command Flags
-
-```text
-  -h, --help   help for completion
-```
-
-## `emacs-jail-mcp completion bash`
+### `emacs-jail-mcp completion bash`
 
 Generate the autocompletion script for the bash shell.
 
@@ -275,14 +226,13 @@ You will need to start a new shell for this setup to take effect.
 emacs-jail-mcp completion bash
 ```
 
-### Command Flags
+#### Command Flags
 
 ```text
       --no-descriptions   disable completion descriptions
-  -h, --help              help for bash
 ```
 
-## `emacs-jail-mcp completion zsh`
+### `emacs-jail-mcp completion zsh`
 
 Generate the autocompletion script for the zsh shell.
 
@@ -312,14 +262,13 @@ You will need to start a new shell for this setup to take effect.
 emacs-jail-mcp completion zsh [flags]
 ```
 
-### Command Flags
+#### Command Flags
 
 ```text
       --no-descriptions   disable completion descriptions
-  -h, --help              help for zsh
 ```
 
-## `emacs-jail-mcp completion fish`
+### `emacs-jail-mcp completion fish`
 
 Generate the autocompletion script for the fish shell.
 
@@ -338,14 +287,13 @@ You will need to start a new shell for this setup to take effect.
 emacs-jail-mcp completion fish [flags]
 ```
 
-### Command Flags
+#### Command Flags
 
 ```text
       --no-descriptions   disable completion descriptions
-  -h, --help              help for fish
 ```
 
-## `emacs-jail-mcp completion powershell`
+### `emacs-jail-mcp completion powershell`
 
 Generate the autocompletion script for powershell.
 
@@ -361,39 +309,30 @@ to your powershell profile.
 emacs-jail-mcp completion powershell [flags]
 ```
 
-### Command Flags
+#### Command Flags
 
 ```text
       --no-descriptions   disable completion descriptions
-  -h, --help              help for powershell
 ```
 
-## `emacs-jail-mcp completion help`
+# Reporting Bugs
 
-Help provides help for any command in the application.
-Simply type completion help [path to command] for full details.
+Please report bugs at https://github.com/gavv/emacs-jail-mcp
 
-```text
-emacs-jail-mcp completion help [command] [flags]
-```
+# Copyright
 
-### Command Flags
+Copyright Victor Gaydov and contributors. See AUTHORS.md in Git repo.
 
-```text
-  -h, --help   help for help
-```
+# License
 
-## `emacs-jail-mcp help`
+emacs-jail-mcp is licensed under the GNU General Public License version 3 or later.
 
-Help provides help for any command in the application.
-Simply type emacs-jail-mcp help [path to command] for full details.
+See LICENSE in Git repo.
 
-```text
-emacs-jail-mcp help [command] [flags]
-```
+# History
 
-### Command Flags
+See CHANGES.md in Git repo.
 
-```text
-  -h, --help   help for help
-```
+# See Also
+
+emacs(1), podman(1), Xvfb(1)

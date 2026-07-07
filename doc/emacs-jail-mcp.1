@@ -22,6 +22,7 @@ With \-\-stdio: reads MCP JSON\-RPC messages from stdin/stdout (stdio transport)
 
 .RS
 
+
 Command flags:
 
 .TP
@@ -72,9 +73,6 @@ timeout waiting for jail to stop
 .TP
 \fB\-\-exec\-timeout\fP=\fI10m0s\fR
 timeout for elisp eval and shell commands
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for serve
 .RE
 
 .TP
@@ -83,27 +81,6 @@ Check whether the MCP SSE server is listening on the configured TCP address.
 
 .RS
 
-Command flags:
-
-.TP
-\fB\-H\fP, \fB\-\-mcp\-host\fP=\fI127.0.0.1\fR
-host of the MCP SSE server to connect to
-.TP
-\fB\-P\fP, \fB\-\-mcp\-port\fP=\fI9421\fR
-TCP port of the MCP SSE server
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for info
-.RE
-
-.TP
-\fIemacs\-jail\-mcp send [flags]\fR
-Send MCP requests from the command line.
-.PP
-Each subcommand corresponds to one MCP tool and connects to an already\-running server via
-its TCP port (SSE transport).
-
-.RS
 
 Command flags:
 
@@ -113,15 +90,6 @@ host of the MCP SSE server to connect to
 .TP
 \fB\-P\fP, \fB\-\-mcp\-port\fP=\fI9421\fR
 TCP port of the MCP SSE server
-.TP
-\fB\-\-start\-timeout\fP=\fI10m0s\fR
-timeout for jail start/stop operations
-.TP
-\fB\-\-exec\-timeout\fP=\fI10m0s\fR
-timeout for eval, logs, bytecomp, and shell operations
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for send
 .RE
 
 .TP
@@ -131,6 +99,9 @@ Control the jail lifecycle.
 Specify exactly one action flag: \-\-start, \-\-stop, \-\-restart, or \-\-status.
 
 .RS
+
+Aliases: ctl
+
 
 Command flags:
 
@@ -152,9 +123,6 @@ optional timeout for \-\-start or \-\-restart, for example 5s
 .TP
 \fB\-\-swallow\-errors\fP
 swallow Emacs init errors and continue startup
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for control
 .RE
 
 .TP
@@ -163,11 +131,9 @@ Evaluate an Emacs Lisp expression
 
 .RS
 
-Command flags:
+Aliases: ev
 
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for eval
+
 .RE
 
 .TP
@@ -175,6 +141,9 @@ help for eval
 Byte\-compile an Elisp file and return diagnostics
 
 .RS
+
+Aliases: bc
+
 
 Command flags:
 
@@ -184,9 +153,6 @@ path to the Elisp file to byte\-compile
 .TP
 \fB\-s\fP, \fB\-\-severity\fP=\fIstring\fR
 filter by severity: error or warning
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for bytecomp
 .RE
 
 .TP
@@ -195,11 +161,9 @@ Run a shell command inside the jail container
 
 .RS
 
-Command flags:
+Aliases: sh
 
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for shell
+
 .RE
 
 .TP
@@ -208,14 +172,14 @@ Capture a screenshot of the Emacs display
 
 .RS
 
+Aliases: sc
+
+
 Command flags:
 
 .TP
 \fB\-o\fP, \fB\-\-output\fP=\fIstring\fR
 output file path for the PNG screenshot
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for screenshot
 .RE
 
 .TP
@@ -223,6 +187,9 @@ help for screenshot
 Fetch Emacs log and diagnostic output
 
 .RS
+
+Aliases: lg
+
 
 Command flags:
 
@@ -235,23 +202,6 @@ comma\-separated log sources (messages, warnings, backtrace, compile\_log, async
 .TP
 \fB\-l\fP, \fB\-\-limit\fP=\fI0\fR
 max lines to return per source section
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for logs
-.RE
-
-.TP
-\fIemacs\-jail\-mcp send help [command] [flags]\fR
-Help provides help for any command in the application.
-Simply type send help [path to command] for full details.
-
-.RS
-
-Command flags:
-
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for help
 .RE
 
 .TP
@@ -260,29 +210,12 @@ Generate manual page
 
 .RS
 
+
 Command flags:
 
 .TP
 \fB\-\-format\fP=\fItroff\fR
 output format: troff or markdown
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for man
-.RE
-
-.TP
-\fIemacs\-jail\-mcp completion [flags]\fR
-Generate the autocompletion script for emacs\-jail\-mcp for the specified shell.
-See each sub\-command's help for details on how to use the generated script.
-
-
-.RS
-
-Command flags:
-
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for completion
 .RE
 
 .TP
@@ -311,14 +244,12 @@ You will need to start a new shell for this setup to take effect.
 
 .RS
 
+
 Command flags:
 
 .TP
 \fB\-\-no\-descriptions\fP
 disable completion descriptions
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for bash
 .RE
 
 .TP
@@ -349,14 +280,12 @@ You will need to start a new shell for this setup to take effect.
 
 .RS
 
+
 Command flags:
 
 .TP
 \fB\-\-no\-descriptions\fP
 disable completion descriptions
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for zsh
 .RE
 
 .TP
@@ -376,14 +305,12 @@ You will need to start a new shell for this setup to take effect.
 
 .RS
 
+
 Command flags:
 
 .TP
 \fB\-\-no\-descriptions\fP
 disable completion descriptions
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for fish
 .RE
 
 .TP
@@ -400,41 +327,28 @@ to your powershell profile.
 
 .RS
 
+
 Command flags:
 
 .TP
 \fB\-\-no\-descriptions\fP
 disable completion descriptions
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for powershell
 .RE
 
-.TP
-\fIemacs\-jail\-mcp completion help [command] [flags]\fR
-Help provides help for any command in the application.
-Simply type completion help [path to command] for full details.
-
-.RS
-
-Command flags:
-
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for help
-.RE
-
-.TP
-\fIemacs\-jail\-mcp help [command] [flags]\fR
-Help provides help for any command in the application.
-Simply type emacs\-jail\-mcp help [path to command] for full details.
-
-.RS
-
-Command flags:
-
-.TP
-\fB\-h\fP, \fB\-\-help\fP
-help for help
-.RE
-
+.SH REPORTING BUGS
+.PP
+Please report bugs at https://github.com/gavv/emacs\-jail\-mcp
+.SH COPYRIGHT
+.PP
+Copyright Victor Gaydov and contributors. See AUTHORS.md in Git repo.
+.SH LICENSE
+.PP
+emacs\-jail\-mcp is licensed under the GNU General Public License version 3 or later.
+.PP
+See LICENSE in Git repo.
+.SH HISTORY
+.PP
+See CHANGES.md in Git repo.
+.SH SEE ALSO
+.PP
+emacs(1), podman(1), Xvfb(1)

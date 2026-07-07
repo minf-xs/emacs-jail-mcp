@@ -3,7 +3,7 @@ module github.com/gavv/emacs-jail-mcp
 go 1.24
 
 require (
-	github.com/gavv/cobradoc v1.2.0
+	github.com/gavv/cobradoc v1.3.2
 	github.com/mark3labs/mcp-go v0.27.0
 	github.com/op/go-logging v0.0.0-20160315200505-970db520ece7
 	github.com/spf13/cobra v1.10.2
