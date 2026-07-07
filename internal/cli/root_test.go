@@ -24,7 +24,7 @@ func TestHelpPreservesInheritedSendFlagOrder(t *testing.T) {
 	assertBefore(t, out, "--start-timeout", "--exec-timeout")
 }
 
-func TestManualIncludesDefaultHelpAndCompletionCommands(t *testing.T) {
+func TestManualIncludesCommands(t *testing.T) {
 	cmd := NewRootCmd()
 	buf := bytes.NewBuffer(nil)
 
@@ -33,8 +33,9 @@ func TestManualIncludesDefaultHelpAndCompletionCommands(t *testing.T) {
 	}
 	out := buf.String()
 
-	assertContains(t, out, "emacs-jail-mcp completion")
-	assertContains(t, out, "emacs-jail-mcp help")
+	assertContains(t, out, "emacs-jail-mcp serve")
+	assertContains(t, out, "emacs-jail-mcp send")
+	assertContains(t, out, "emacs-jail-mcp info")
 }
 
 func runHelp(t *testing.T, args ...string) string {
