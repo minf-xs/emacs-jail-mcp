@@ -42,6 +42,14 @@ func (c *Container) Start(ctx context.Context) error {
 
 	log.Infof("starting container %q", c.serverConfig.ContainerName())
 
+	image := c.serverConfig.ContainerImage
+	if image == "" {
+		image = "emacs-jail:latest"
+	}
+	if err := c.EnsureImage(ctx, image); err != nil {
+		return fmt.Errorf("ensure image: %w", err)
+	}
+
 	// Write elisp files to /tmp (shared with the container via /tmp:/tmp mount).
 	if err := WriteElispFiles(c.serverConfig.ElispDir()); err != nil {
 		log.Errorf("failed to write elisp files: %v", err)
@@ -134,10 +142,6 @@ func (c *Container) Start(ctx context.Context) error {
 		shell = "/bin/bash"
 	}
 	args = append(args, "--env", "SHELL="+shell)
-	image := c.serverConfig.ContainerImage
-	if image == "" {
-		image = "emacs-jail:latest"
-	}
 	args = append(args,
 		image,
 		entrypointBinary, "entrypoint",
@@ -280,6 +284,36 @@ func (c *Container) IsRunning() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.running
+}
+
+func (c *Container) EnsureImage(ctx context.Context, image string) error {
+	_, err := c.podman(ctx, "image", "exists", image)
+	if err == nil {
+		return nil
+	}
+	if image != "emacs-jail:latest" {
+		return fmt.Errorf("container image %q not found", image)
+	}
+
+	log.Infof("container image %q not found, building automatically...", image)
+	tmpDir, err := os.MkdirTemp("", "emacs-jail-build-*")
+	if err != nil {
+		return fmt.Errorf("create temp build dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	containerfilePath := filepath.Join(tmpDir, "Containerfile")
+	if err := os.WriteFile(containerfilePath, defaultContainerfile, 0o644); err != nil {
+		return fmt.Errorf("write Containerfile: %w", err)
+	}
+
+	out, err := c.podman(ctx, "build", "-t", image, "-f", containerfilePath, tmpDir)
+	if err != nil {
+		log.Errorf("podman build failed: %v (output: %s)", err, strings.TrimSpace(out))
+		return fmt.Errorf("podman build %s: %w\noutput: %s", image, err, out)
+	}
+	log.Infof("container image %q built successfully", image)
+	return nil
 }
 
 func (c *Container) appendVolumeIfExists(

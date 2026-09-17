@@ -98,7 +98,9 @@ Volumes:
 In rootless Podman, running without `--user` runs as container root (UID 0),
 which maps directly to the host user's UID/GID via user namespaces, providing
 full access to `$HOME` and overlay writes without permission errors. Container
-name is `emacs-jail-<pid>` and auto-removes on exit (`--rm`).
+name is `emacs-jail-<pid>` and auto-removes on exit (`--rm`). If the default
+image `emacs-jail:latest` is missing locally, `Container.Start()` automatically builds
+it from an embedded Containerfile using `podman build`.
 
 ## Instrumentation
 

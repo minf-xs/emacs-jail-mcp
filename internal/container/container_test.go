@@ -101,3 +101,20 @@ func TestLogLinesRequestMoreThanExist(t *testing.T) {
 	lines := c.LogLines(100)
 	assert.Len(t, lines, 1, "LogLines(100) on 1-line file should return 1 line; lines=%v", lines)
 }
+
+func TestEnsureImageCustomMissing(t *testing.T) {
+	cfg := config.DefaultServer()
+	c := container.New(cfg, testDisplay())
+
+	err := c.EnsureImage(context.Background(), "nonexistent-image:test-tag-xyz")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestEnsureImageExisting(t *testing.T) {
+	cfg := config.DefaultServer()
+	c := container.New(cfg, testDisplay())
+
+	err := c.EnsureImage(context.Background(), "emacs-jail:latest")
+	require.NoError(t, err)
+}
