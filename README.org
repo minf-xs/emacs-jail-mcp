@@ -19,7 +19,7 @@
    :CUSTOM_ID: synopsys
    :END:
 
-~emacs-jail-mcp~ is an [[https://modelcontextprotocol.io/][MCP server]] that runs Emacs inside a disposable [[https://podman.io/][podman]] container with *copy-on-write access* to the host filesystem.
+~emacs-jail-mcp~ is an [[https://modelcontextprotocol.io/][MCP server]] that runs Emacs inside a disposable [[https://podman.io/][podman]] container with *copy-on-write access* to the user's home directory.
 
 This gives LLM access to a *replica of your development environment* (Emacs, configuration, project files), so it can debug issues efficiently but can't break anything.
 
@@ -45,7 +45,7 @@ This is the idea:
 
 The Go MCP server accepts requests from an LLM client and exposes MCP "tools" - callable functions to start/stop jail, evaluate Elisp, read Emacs logs, etc.
 
-When the jail starts, it creates a Podman container with copy-on-write access to the complete host filesystem. The container runs as the current user and shares the host network, hostname, IPC, etc.
+When the jail starts, it creates a rootless Podman container running a container image with copy-on-write access to the user's home directory. The container shares the host network, hostname, IPC, etc.
 
 Inside the jail, Emacs runs under Xvfb, loads the user's normal Emacs configuration, and starts a bundled Elisp JSON-RPC server. The Go MCP server talks to the JSON-RPC server over a Unix socket.
 
@@ -95,16 +95,18 @@ It should be easy enough to implement other container or OverlayFS backends and 
 Should be pre-installed on system:
 
 - golang (>= 1.24)
-- emacs (>= 29.1)
-- podman (for containers)
-- xvfb (for virtual X server)
-- imagemagick (for screenshots)
-- sudo (optional)
+- podman (rootless, for containers)
 
 For Debian-based distros:
 
 #+begin_src shell
-sudo apt-get install golang podman xvfb imagemagick sudo
+sudo apt-get install golang podman
+#+end_src
+
+Build the container image:
+
+#+begin_src shell
+./scripts/build-image.sh
 #+end_src
 
 *** Build & install

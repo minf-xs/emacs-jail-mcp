@@ -46,7 +46,9 @@ emacs-jail-mcp serve [flags]
 ```text
       --stdio                     use stdio transport instead of TCP SSE transport
       --podman-binary string      podman binary name or path (default "podman")
-      --no-sudo                   disable sudo for podman commands
+      --image string              container image name or reference (default "emacs-jail:latest")
+      --sudo                      run podman commands with sudo
+      --no-sudo                   disable sudo for podman commands (deprecated)
       --display-width int         override auto-detected Xvfb display width in pixels
       --display-height int        override auto-detected Xvfb display height in pixels
       --display-depth int         Xvfb display color depth (default 24)

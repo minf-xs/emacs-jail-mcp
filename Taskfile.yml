@@ -19,7 +19,11 @@ tasks:
 
   build:
     cmds:
-      - go build -o bin/emacs-jail-mcp ./cmd/emacs-jail-mcp/
+      - CGO_ENABLED=0 go build -o bin/emacs-jail-mcp ./cmd/emacs-jail-mcp/
+
+  image:
+    cmds:
+      - ./scripts/build-image.sh
 
   docs:
     cmds:

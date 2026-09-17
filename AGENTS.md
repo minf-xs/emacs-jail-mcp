@@ -79,14 +79,26 @@ Emacs GUI (headless, screenshottable)
 
 ## Container setup
 
-Uses `podman run --rootfs /:O` — the host root filesystem with a CoW (copy-on-write) overlay. No Dockerfile, no image build. Combined with `--uts=host`, `--network=host`, `--ipc=host`, and `--security-opt label=disable`, the container has near-full host access while remaining disposable. The container runs in its own private PID namespace (no `--pid=host`). `--detach` runs the container in the background; `--tty` allocates a PTY (required for shell commands and `tty` detection); `--init` runs an init process to reap zombies.
+Uses `podman run` with a container image (default `emacs-jail:latest`) and an
+ephemeral copy-on-write overlay mount of `$HOME` (`--volume $HOME:$HOME:O`).
+Combined with `--uts=host`, `--network=host`, `--ipc=host`, and `--security-opt
+label=disable`, the container runs completely rootless without requiring sudo or root
+privileges. The container runs in its own private PID namespace (no `--pid=host`).
+`--detach` runs the container in the background; `--tty` allocates a PTY (required
+for shell commands and `tty` detection); `--init` runs an init process to reap zombies.
 
 Volumes:
 - `/tmp:/tmp` — shared mount for socket, log file, and elisp files
 - `/run/user/<uid>:/run/user/<uid>` — for D-Bus and other user runtime files
+- `$HOME:$HOME:O` — copy-on-write overlay mount of the user's home directory
 - `$HOME/.cache:$HOME/.cache` — Emacs package cache
+- `/nix/store:/nix/store:ro` — Nix store for symlinked configs (if exists)
+- `<entrypoint-binary>:<entrypoint-binary>:ro` — read-only mount of entrypoint binary
 
-The container runs as the current user (`--user <uid>:<gid>`) and in the current working directory (`--workdir <cwd>`). Container name is `emacs-jail-<pid>` and auto-removes on exit (`--rm`).
+In rootless Podman, running without `--user` runs as container root (UID 0),
+which maps directly to the host user's UID/GID via user namespaces, providing
+full access to `$HOME` and overlay writes without permission errors. Container
+name is `emacs-jail-<pid>` and auto-removes on exit (`--rm`).
 
 ## Instrumentation
 
@@ -267,4 +279,6 @@ e2e/cli_test.go                             # TestCLI: CLI subcommands against l
 16. **DefaultServer() auto-detects emacs binary**: If `emacs` is not in PATH, `DefaultServer()` scans PATH for `emacs-<ver>` executables and selects the highest-versioned one. Version comparison is numeric (`emacs-30.1` > `emacs-29.4`).
 
 17. **CI uses Emacs 29.1+, not 27.x/28.x**: The `purcell/setup-emacs` Emacs 27.1, 27.2, and 28.2 Linux builds consistently hang in GitHub Actions before `site-start.el` during interactive startup under the Podman/Xvfb jail. Batch `emacs --batch -Q --eval` works on 27.1, but GUI, daemon, and `-nw` startup variants do not reach the jail RPC socket. Emacs 29.1, 29.2, 29.3, 29.4, 30.1, and 30.2 pass CI; keep matrix coverage on Emacs 29.1+ unless this upstream/runtime issue is revisited with fresh diagnostics.
+
+18. **Rootless Podman & `$HOME` overlay**: Mounting host rootfs (`--rootfs /:O`) requires root/sudo privileges because rootless overlay on `/` fails, and unprivileged OCI runtimes fail on root-owned restricted files like `/etc/sudoers`. Instead, a container image (default `emacs-jail:latest`) is run with an ephemeral overlay on `$HOME` (`-v $HOME:$HOME:O`). In rootless Podman, omitting `--user` runs as container root (UID 0) which directly maps to the host user UID, giving full access to `$HOME` and overlay writes without permission errors.
 

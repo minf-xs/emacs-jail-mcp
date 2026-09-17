@@ -177,6 +177,11 @@ func (e *Entrypoint) execEmacs() error {
 	_ = stderrFile.Close()
 
 	path, err := exec.LookPath(program)
+	if err != nil && program != "emacs" && e.EmacsLauncher == "" {
+		program = "emacs"
+		args[0] = "emacs"
+		path, err = exec.LookPath("emacs")
+	}
 	if err != nil {
 		return fmt.Errorf("find %s: %w", program, err)
 	}

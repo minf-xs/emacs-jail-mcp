@@ -92,7 +92,6 @@ func (c *Container) Start(ctx context.Context) error {
 		"run",
 		"--rm", "--detach", "--tty", "--init",
 		"--name", c.serverConfig.ContainerName(),
-		"--user", fmt.Sprintf("%d:%d", uid, gid),
 		"--workdir", cwd,
 		"--uts=host",
 		"--network=host",
@@ -100,23 +99,47 @@ func (c *Container) Start(ctx context.Context) error {
 		"--volume", "/tmp:/tmp",
 		"--security-opt", "label=disable",
 	}
+	if c.serverConfig.UseSudo {
+		args = append(args, "--user", fmt.Sprintf("%d:%d", uid, gid))
+	}
 	args = c.appendVolumeIfExists(args,
 		fmt.Sprintf("/run/user/%d", uid), fmt.Sprintf("/run/user/%d", uid))
 	if home := os.Getenv("HOME"); home != "" {
+		args = append(args, "--volume", fmt.Sprintf("%s:%s:O", home, home))
 		args = c.appendVolumeIfExists(args, filepath.Join(home, ".cache"),
 			filepath.Join(home, ".cache"))
 	}
+	args = c.appendVolumeIfExists(args, "/nix/store", "/nix/store:ro")
+	args = c.appendVolumeIfExists(args,
+		"/etc/fonts/conf.d/00-nixos-cache.conf",
+		"/etc/fonts/conf.d/00-nixos-cache.conf:ro")
+	args = c.appendVolumeIfExists(args, entrypointBinary, entrypointBinary+":ro")
 	for _, kv := range envVars {
 		args = append(args, "--env", kv)
 	}
-	if path := os.Getenv("PATH"); path != "" {
-		args = append(args, "--env", "PATH="+path)
+	if home := os.Getenv("HOME"); home != "" {
+		args = append(args, "--env", "HOME="+home)
 	}
-	if shell := os.Getenv("SHELL"); shell != "" {
-		args = append(args, "--env", "SHELL="+shell)
+	path := os.Getenv("PATH")
+	if path != "" {
+		path += ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+	} else {
+		path = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+	}
+	args = append(args, "--env", "PATH="+path)
+	shell := os.Getenv("SHELL")
+	if shell == "" || !filepath.IsAbs(shell) ||
+		strings.HasPrefix(shell, "/nix/store") ||
+		strings.HasPrefix(shell, "/run/current-system") {
+		shell = "/bin/bash"
+	}
+	args = append(args, "--env", "SHELL="+shell)
+	image := c.serverConfig.ContainerImage
+	if image == "" {
+		image = "emacs-jail:latest"
 	}
 	args = append(args,
-		"--rootfs", "/:O",
+		image,
 		entrypointBinary, "entrypoint",
 	)
 

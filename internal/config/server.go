@@ -13,6 +13,7 @@ import (
 // It is consumed by the jail and container layers.
 type ServerConfig struct {
 	PodmanBinary    string
+	ContainerImage  string
 	ContainerPrefix string
 	UseSudo         bool
 	Display         DisplayConfig
@@ -35,8 +36,9 @@ type ServerConfig struct {
 func DefaultServer() *ServerConfig {
 	return &ServerConfig{
 		PodmanBinary:    "podman",
+		ContainerImage:  "emacs-jail:latest",
 		ContainerPrefix: "emacs-jail",
-		UseSudo:         true,
+		UseSudo:         false,
 		Display: DisplayConfig{
 			Depth: DefaultDisplayDepth,
 		},

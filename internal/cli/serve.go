@@ -26,6 +26,7 @@ var serverLog = logging.MustGetLogger("server")
 func newServerCmd() *cobra.Command {
 	cfg := config.DefaultServer()
 	var stdio bool
+	var sudo bool
 	var noSudo bool
 
 	cmd := &cobra.Command{
@@ -39,7 +40,11 @@ CLI client connections.
 
 With --stdio: reads MCP JSON-RPC messages from stdin/stdout (stdio transport).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg.UseSudo = !noSudo
+			if cmd.Flags().Changed("sudo") {
+				cfg.UseSudo = sudo
+			} else if cmd.Flags().Changed("no-sudo") {
+				cfg.UseSudo = !noSudo
+			}
 			return runServer(cmd.Context(), cfg, stdio)
 		},
 		SilenceUsage:  true,
@@ -54,8 +59,12 @@ With --stdio: reads MCP JSON-RPC messages from stdin/stdout (stdio transport).`,
 
 	pfs.StringVar(&cfg.PodmanBinary,
 		"podman-binary", cfg.PodmanBinary, "podman binary name or path")
+	pfs.StringVar(&cfg.ContainerImage,
+		"image", cfg.ContainerImage, "container image name or reference")
+	pfs.BoolVar(&sudo,
+		"sudo", false, "run podman commands with sudo")
 	pfs.BoolVar(&noSudo,
-		"no-sudo", false, "disable sudo for podman commands")
+		"no-sudo", false, "disable sudo for podman commands (deprecated)")
 	pfs.IntVar(&cfg.Display.Width,
 		"display-width", cfg.Display.Width,
 		"override auto-detected Xvfb display width in pixels")
