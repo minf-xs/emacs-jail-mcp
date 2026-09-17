@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -18,6 +19,10 @@ import (
 // EntrypointEnv returns the environment variables to pass to podman run --env
 // so the entrypoint subcommand can configure itself inside the container.
 func EntrypointEnv(cfg *config.ServerConfig, disp *display.Display) []string {
+	// Resolve symlinks on the host so a NixOS profile symlink becomes the
+	// canonical /nix/store path, which is visible inside the container via
+	// the /nix/store volume mount and runs the host emacs binary.
+	emacsBinary := config.ResolveEmacsBinary(cfg.EmacsBinary)
 	return []string{
 		"EMACS_JAIL_LOCK_PATH=" + cfg.LockPath(),
 		"EMACS_JAIL_SOCKET_PATH=" + cfg.SocketPath(),
@@ -28,7 +33,7 @@ func EntrypointEnv(cfg *config.ServerConfig, disp *display.Display) []string {
 		fmt.Sprintf("EMACS_JAIL_DISPLAY_HEIGHT=%d", disp.Height),
 		fmt.Sprintf("EMACS_JAIL_DISPLAY_DEPTH=%d", disp.Depth),
 		"EMACS_JAIL_ELISP_DIR=" + cfg.ElispDir(),
-		"EMACS_JAIL_EMACS_BINARY=" + cfg.EmacsBinary,
+		"EMACS_JAIL_EMACS_BINARY=" + emacsBinary,
 		"EMACS_JAIL_EMACS_LAUNCHER=" + cfg.EmacsLauncher,
 		"EMACS_JAIL_PRE_INIT_FILE=" + cfg.EmacsPreInitFile,
 		"EMACS_JAIL_POST_INIT_FILE=" + cfg.EmacsPostInitFile,
@@ -160,7 +165,10 @@ func (e *Entrypoint) waitForX11Socket() error {
 
 func (e *Entrypoint) execEmacs() error {
 	program := e.EmacsBinary
-	args := []string{e.EmacsBinary, "--maximized", "--eval", e.rpcStartExpression()}
+	if program == "" {
+		program = "emacs"
+	}
+	args := []string{program, "--maximized", "--eval", e.rpcStartExpression()}
 	if e.EmacsLauncher != "" {
 		program = e.EmacsLauncher
 		args = append([]string{e.EmacsLauncher}, args...)
@@ -177,7 +185,11 @@ func (e *Entrypoint) execEmacs() error {
 	_ = stderrFile.Close()
 
 	path, err := exec.LookPath(program)
-	if err != nil && program != "emacs" && e.EmacsLauncher == "" {
+	// Fall back to the container emacs only for bare binary names. An
+	// absolute host path (e.g. /nix/store/... on NixOS) must not silently
+	// fall back, otherwise a missing mount would hide the misconfiguration.
+	if err != nil && e.EmacsLauncher == "" && !filepath.IsAbs(program) &&
+		program != "emacs" {
 		program = "emacs"
 		args[0] = "emacs"
 		path, err = exec.LookPath("emacs")

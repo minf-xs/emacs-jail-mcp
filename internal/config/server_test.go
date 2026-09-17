@@ -19,7 +19,9 @@ func TestServerDefaultValues(t *testing.T) {
 	assert.False(t, cfg.UseSudo)
 	assert.Equal(t, "127.0.0.1", cfg.MCPHost)
 	assert.Equal(t, config.DefaultMCPPort, cfg.MCPPort)
-	assert.Equal(t, "emacs", cfg.EmacsBinary)
+	// On NixOS DefaultEmacsBinary resolves to a /nix/store path so the
+	// container runs the host binary; elsewhere it is a bare name.
+	assert.NotEmpty(t, cfg.EmacsBinary)
 }
 
 func TestServerMCPAddr(t *testing.T) {

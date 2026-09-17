@@ -30,3 +30,12 @@ func TestEntrypointEnvIncludesRuntimeConfig(t *testing.T) {
 	assert.Contains(t, envText, "EMACS_JAIL_POST_INIT_FILE=/tmp/post.el")
 	assert.Contains(t, envText, "EMACS_JAIL_SWALLOW_ERRORS=true")
 }
+
+func TestEntrypointEnvPassesEmacsBinaryThrough(t *testing.T) {
+	cfg := config.DefaultServer()
+	cfg.EmacsBinary = "/nonexistent-dir-xyz/emacs"
+	env := container.EntrypointEnv(cfg, display.Default(20))
+	envText := strings.Join(env, "\n")
+
+	assert.Contains(t, envText, "EMACS_JAIL_EMACS_BINARY=/nonexistent-dir-xyz/emacs")
+}

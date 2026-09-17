@@ -53,7 +53,7 @@ Emacs GUI (headless, screenshottable)
 
 - **CLI** (`internal/cli/`): Cobra subcommand implementations. `serve` starts the MCP server — with `--stdio` it uses stdio transport, without it (default) it listens on a TCP port using SSE transport, staying alive until stdin closes. `entrypoint` is a hidden subcommand used as the Podman container entrypoint and starts the watchdog, Xvfb, and Emacs. `send` proxies individual tool calls to a running server over SSE/TCP. `info` dials the configured TCP address and reports whether the server is responding. `man` emits troff or Markdown documentation using `cobradoc`.
 
-- **Config** (`internal/config/`): All public settings via CLI flags, no config file. `server.go` defines `ServerConfig` with derived helpers: `JailID`, `ContainerName`, `SocketPath`, `MCPAddr`, `ElispDir`, `LogPath`, `StderrPath`, and `LockPath`. Optional fields: `EmacsLauncher` (wraps the emacs command), `EmacsPreInitFile` (loaded from site-start.el before user init), `EmacsPostInitFile` (loaded from --eval after user init), `SuppressInitErrors`. `DefaultServer` auto-detects the emacs binary by checking PATH for `emacs` and falling back to the highest-versioned `emacs-<ver>`. `display.go` defines display defaults and CLI overrides. `client.go` defines `ClientConfig` (host/port for the CLI client). `ports.go` holds port constants.
+- **Config** (`internal/config/`): All public settings via CLI flags, no config file. `server.go` defines `ServerConfig` with derived helpers: `JailID`, `ContainerName`, `SocketPath`, `MCPAddr`, `ElispDir`, `LogPath`, `StderrPath`, and `LockPath`. Optional fields: `EmacsLauncher` (wraps the emacs command), `EmacsPreInitFile` (loaded from site-start.el before user init), `EmacsPostInitFile` (loaded from --eval after user init), `SuppressInitErrors`. `DefaultServer` auto-detects the emacs binary by checking PATH for `emacs` and falling back to the highest-versioned `emacs-<ver>`. `emacs.go` defines `ResolveEmacsBinary`, which maps the binary to its canonical absolute path when it points into `/nix/store` (NixOS) so the container runs the host emacs; otherwise the bare name is kept and the container uses its own emacs. `display.go` defines display defaults and CLI overrides. `client.go` defines `ClientConfig` (host/port for the CLI client). `ports.go` holds port constants.
 
 - **Display** (`internal/display/`): Xvfb display configuration. Chooses the display number, queries the host display size with `xdpyinfo` when available, falls back to default dimensions, applies explicit CLI overrides, and provides X11 socket/lock paths. Host display probing is an internal jail concern and is not performed by the CLI.
 
@@ -92,7 +92,7 @@ Volumes:
 - `/run/user/<uid>:/run/user/<uid>` — for D-Bus and other user runtime files
 - `$HOME:$HOME:O` — copy-on-write overlay mount of the user's home directory
 - `$HOME/.cache:$HOME/.cache` — Emacs package cache
-- `/nix/store:/nix/store:ro` — Nix store for symlinked configs (if exists)
+- `/nix/store:/nix/store:ro` — Nix store, lets the container exec the host emacs binary on NixOS (if exists)
 - `<entrypoint-binary>:<entrypoint-binary>:ro` — read-only mount of entrypoint binary
 
 In rootless Podman, running without `--user` runs as container root (UID 0),
@@ -278,9 +278,11 @@ e2e/cli_test.go                             # TestCLI: CLI subcommands against l
 
 11. **Jail needs its own RWMutex**: MCP handlers run concurrently and share one `Jail`. Use an exclusive lock for state-changing methods (`Start`, `Stop`, `Restart`) and a read lock for readers (`EvalElisp`, `Shell`, `screenshot`, logs). Keep `Restart` on internal locked helpers to avoid recursive locking.
 
-16. **DefaultServer() auto-detects emacs binary**: If `emacs` is not in PATH, `DefaultServer()` scans PATH for `emacs-<ver>` executables and selects the highest-versioned one. Version comparison is numeric (`emacs-30.1` > `emacs-29.4`).
+16. **DefaultServer() auto-detects emacs binary**: If `emacs` is not in PATH, `DefaultServer()` scans PATH for `emacs-<ver>` executables and selects the highest-versioned one. Version comparison is numeric (`emacs-30.1` > `emacs-29.4`). `ResolveEmacsBinary` canonicalizes the result with `EvalSymlinks` when it points into `/nix/store`, so NixOS profile symlinks become absolute store paths visible inside the container.
 
 17. **CI uses Emacs 29.1+, not 27.x/28.x**: The `purcell/setup-emacs` Emacs 27.1, 27.2, and 28.2 Linux builds consistently hang in GitHub Actions before `site-start.el` during interactive startup under the Podman/Xvfb jail. Batch `emacs --batch -Q --eval` works on 27.1, but GUI, daemon, and `-nw` startup variants do not reach the jail RPC socket. Emacs 29.1, 29.2, 29.3, 29.4, 30.1, and 30.2 pass CI; keep matrix coverage on Emacs 29.1+ unless this upstream/runtime issue is revisited with fresh diagnostics.
 
 18. **Rootless Podman & `$HOME` overlay**: Mounting host rootfs (`--rootfs /:O`) requires root/sudo privileges because rootless overlay on `/` fails, and unprivileged OCI runtimes fail on root-owned restricted files like `/etc/sudoers`. Instead, a container image (default `emacs-jail:latest`) is run with an ephemeral overlay on `$HOME` (`-v $HOME:$HOME:O`). In rootless Podman, omitting `--user` runs as container root (UID 0) which directly maps to the host user UID, giving full access to `$HOME` and overlay writes without permission errors.
+
+19. **Host emacs via `/nix/store` mount**: On NixOS the host emacs is a symlink chain into `/nix/store`, and all its libraries live there too, so a read-only `/nix/store` mount is enough to run it inside the Debian container (verified with `--batch`). `EntrypointEnv` canonicalizes the binary on the host side, and the entrypoint only falls back to the container `emacs` for bare names — an absolute path that is missing inside the container returns an error instead of silently using the wrong emacs.
 

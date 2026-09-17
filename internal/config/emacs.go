@@ -15,9 +15,14 @@ import (
 // DefaultEmacsBinary returns the emacs binary to use. It prefers "emacs" if
 // found in PATH, otherwise scans PATH for "emacs-<ver>" executables and
 // returns the one with the highest version number.
+//
+// On NixOS the emacs binary is a symlink into /nix/store. In that case the
+// canonical absolute store path is returned so the container can exec the
+// host binary directly via the /nix/store volume mount. Otherwise the plain
+// binary name is returned and the container uses its own emacs.
 func DefaultEmacsBinary() string {
 	if _, err := exec.LookPath("emacs"); err == nil {
-		return "emacs"
+		return ResolveEmacsBinary("emacs")
 	}
 
 	best := "emacs"
@@ -42,7 +47,40 @@ func DefaultEmacsBinary() string {
 			}
 		}
 	}
+	if best != "emacs" {
+		return ResolveEmacsBinary(best)
+	}
 	return best
+}
+
+// ResolveEmacsBinary maps an emacs binary name or path to the absolute
+// canonical path when it points into /nix/store, otherwise returns it
+// unchanged.
+//
+// NixOS installs emacs as a symlink chain (profiles -> /nix/store). The
+// resolved store path is visible inside the container through the /nix/store
+// volume mount, so exec'ing it runs the host emacs. Plain names like "emacs"
+// are left alone so the container falls back to its own emacs.
+func ResolveEmacsBinary(binary string) string {
+	if binary == "" {
+		return binary
+	}
+	candidate := binary
+	if !strings.Contains(candidate, "/") {
+		path, err := exec.LookPath(candidate)
+		if err != nil {
+			return binary
+		}
+		candidate = path
+	}
+	resolved, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		return binary
+	}
+	if resolved == "/nix/store" || strings.HasPrefix(resolved, "/nix/store/") {
+		return resolved
+	}
+	return binary
 }
 
 func parseEmacsVersion(s string) ([]int, bool) {
